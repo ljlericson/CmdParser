@@ -1,0 +1,18 @@
+{
+    "queries": {
+        "--version": "Command version 1.0.0\n",
+        "--help": "Command usage: [options]\n",
+        "--type": "hello world",
+        "--func": "Command function description",
+        "--args": "Command arguments description",
+        "--wonderfull": "wonderfull",
+        "query":"hello"
+    },
+    "commands": {
+        "run": [
+            "<speed> (int)",
+            "<type> (string)"
+        ]
+    },
+    "default":"ERROR: Invalid command, please use \"--Help\" for a list of commands"
+}
