@@ -1,0 +1,8 @@
+{
+  "name": "cmdparser",
+  "version-string": "1.0.0",
+  "dependencies": [
+    "nlohmann-json"
+  ],
+  "builtin-baseline": "8394d2150d8a7774b2fe869bec36ca7832b2f50e"
+}
