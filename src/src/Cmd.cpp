@@ -1,21 +1,13 @@
 #include "../include/ljl/cmd.hpp"
 
-ljl::cmd::cmd(int argc, char** argv, std::string_view jsonfp)
+ljl::cmd::cmd(int argc, char** argv, const nlohmann::json& json)
 {
     for(int i = 0; i < argc; i++)
         m_argv.push_back(std::string(argv[i]));
-
-    std::ifstream file(jsonfp.data());
-    if(!file.is_open()) 
-    {
-        std::cerr << "Error opening JSON file: " << jsonfp << "\n";
-    }
     
-    nlohmann::json j;
-    file >> j;
-    if ((j.contains("queries")))
+    if ((json.contains("queries")))
     {
-        for (const auto& [cmd, response] : j["queries"].items()) 
+        for (const auto& [cmd, response] : json["queries"].items()) 
         {
             m_queries.insert({
                 cmd,
@@ -23,27 +15,27 @@ ljl::cmd::cmd(int argc, char** argv, std::string_view jsonfp)
             });
         }
     }
-    if(j.contains("commands"))
+    if(json.contains("commands"))
     {
-        for (const auto& [cmd_name, cmd_data] : j["commands"].items()) 
+        for (const auto& [cmd_name, cmd_data] : json["commands"].items()) 
         {
             m_cmds.insert({
                 cmd_name,
                 {}
             });
-            for(const auto& arg : cmd_data)
+            for(const auto& [arg, type] : cmd_data.items())
             {
-                m_cmds.at(cmd_name).push_back(arg.get<std::string>());
+                m_cmds.at(cmd_name).insert(std::pair{arg, type.get<std::string>()});
             }
         }
     }
-    if(j.contains("default"))
+    if(json.contains("default"))
     {
-        m_default_answer = j["default"].get<std::string>();
+        m_default_answer = json["default"].get<std::string>();
     }
 }
 
-bool ljl::cmd::is(CmdType type)
+bool ljl::cmd::is(cmd::type type)
 {
     if(m_checked)
         return m_isCmd;
@@ -70,15 +62,22 @@ bool ljl::cmd::is(CmdType type)
 
     switch(type)
     {
-    case CmdType::command:
+    case type::command:
+
         m_checked = true;
+
         if(is_cmd)
             m_queries.clear();
+
         return is_cmd;
-    case CmdType::query:
+        
+    case type::query:
+
         m_checked = true;
+
         if(!is_cmd)
             m_cmds.clear();
+
         return !is_cmd;
     }
 
@@ -88,7 +87,7 @@ bool ljl::cmd::is(CmdType type)
 
 void ljl::cmd::respond()
 {
-    if(!m_isCmd && m_argv.size() == 2)
+    if(!m_isCmd && m_checked && m_argv.size() == 2)
     {
         bool found_one = false;
         for(const auto& [query, response] : m_queries)
@@ -108,14 +107,15 @@ void ljl::cmd::respond()
 template<typename _T_>
 _T_ ljl::cmd::get_value(const std::string& cmd, const std::string& arg)
 {
-    auto it = std::find(m_cmds.at(cmd).begin(), m_cmds.at(cmd).end(), arg);
+    auto it = m_cmds.at(cmd).find(arg);
     if(it == m_cmds.at(cmd).end())
     {
-        std::cout << "Arg not found\n";
-        
-        std::cout << std::endl;
+        std::cout << "PROGRAMMER ERROR: Arg " << arg << " not found\n";
+
         return _T_{};
     }
+    // else get type:
+    const std::string& type = m_cmds.at(cmd).at(arg);
 
     size_t element_num = std::distance(m_cmds.at(cmd).begin(), it) + 2;
 
@@ -127,48 +127,73 @@ _T_ ljl::cmd::get_value(const std::string& cmd, const std::string& arg)
     }
     catch(...)
     {
-        std::cout << "Missing argument\nArgs for command" << cmd << ':';
-        for(const auto& arg : m_cmds.at(cmd))
-            std::cout << ", " << arg;
+        std::cout << "|====| Missing argument(s) |====|\nArgs for command " << cmd << ":\n";
+        for(const auto& [arg, type] : m_cmds.at(cmd))
+            std::cout << arg << " | Type: " << type << std::endl;
         
-        std::cout << std::endl;
         exit(-1);
         return _T_{}; // just for compiler warning sake
     }
 
     // Convert based on template type
-    if constexpr (std::is_same_v<_T_, std::string>) 
+    if constexpr (std::is_same_v<_T_, std::string>)
     {
-        return *value; // just return as-is
+        // have to nest 2nd if because it is evaluated at runtime
+        if(type == "string")
+            return *value; // just return as-is
     } 
-    else if constexpr (std::is_integral_v<_T_>) 
+    else if constexpr (std::is_integral_v<_T_>)
     {
-        _T_ val;
-        try
-        {
-            val = static_cast<_T_>(std::stoll(*value)); // handles int, long, etc.
-        }
-        catch(const std::exception&)
-        {
-            std::cout << "Invalid argument given\nValid args for command" << cmd << ':';
-            for(const auto& arg : m_cmds.at(cmd))
-                std::cout << ", " << arg;
+        if(type == "integer")
+        {        
+            _T_ val;
+            try
+            {
+                val = static_cast<_T_>(std::stoll(*value)); // handles int, long, etc.
+            }
+            catch(const std::exception&)
+            {
+                std::cout << "|====| Invalid argument(s) |====|\nArgs for command " << cmd << ":\n";
+                for(const auto& [arg, type] : m_cmds.at(cmd))
+                    std::cout << arg << " | Type: " << type << std::endl;
+
+                
+                std::cout << std::endl;
+                exit(-1);
+                return _T_{}; // just for compiler warning sake
+            }
             
-            std::cout << std::endl;
-            exit(-1);
-            return _T_{}; // just for compiler warning sake
+            return val;
         }
-        
-        return val;
     } 
     else if constexpr (std::is_floating_point_v<_T_>) 
     {
-        return static_cast<_T_>(std::stod(*value)); // handles float, double
+        if(type == "decimal")
+        {
+            _T_ val;
+            try
+            {
+                val = static_cast<_T_>(std::stod(*value)); // handles float, double
+            }
+            catch(...)
+            {
+                std::cout << "|====| Invalid argument(s) |====|\nArgs for command " << cmd << ":\n";
+                for(const auto& [arg, type] : m_cmds.at(cmd))
+                    std::cout << arg << " | Type: " << type << std::endl;
+
+                
+                std::cout << std::endl;
+                exit(-1);
+                return _T_{}; // just for compiler warning sake
+            }
+
+            return val;
+        }
     } 
-    else 
-    {
-        static_assert(false, "Unsupported type passed to get_value()");
-    }
+
+    std::cout << "PROGRAMMER ERROR: Type mismatch or unsupported type\n";
+    exit(-1);
+    return _T_{};
 }
 
 bool ljl::cmd::operator[](const std::string& cmd)
@@ -176,6 +201,18 @@ bool ljl::cmd::operator[](const std::string& cmd)
     return m_argv[1] == cmd;
 }
 
+// string
 template std::string ljl::cmd::get_value<std::string>(const std::string&, const std::string&);
-template int ljl::cmd::get_value<int>(const std::string&, const std::string&);
+// integer types
+template int8_t ljl::cmd::get_value<int8_t>(const std::string&, const std::string&);
+template int16_t ljl::cmd::get_value<int16_t>(const std::string&, const std::string&);
+template int32_t ljl::cmd::get_value<int32_t>(const std::string&, const std::string&);
+template int64_t ljl::cmd::get_value<int64_t>(const std::string&, const std::string&);
+// unsinged integer types
+template uint8_t ljl::cmd::get_value<uint8_t>(const std::string&, const std::string&);
+template uint16_t ljl::cmd::get_value<uint16_t>(const std::string&, const std::string&);
+template uint32_t ljl::cmd::get_value<uint32_t>(const std::string&, const std::string&);
 template uint64_t ljl::cmd::get_value<uint64_t>(const std::string&, const std::string&);
+// decimal types
+template float ljl::cmd::get_value<float>(const std::string&, const std::string&);
+template double ljl::cmd::get_value<double>(const std::string&, const std::string&);

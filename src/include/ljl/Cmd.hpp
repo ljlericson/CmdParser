@@ -18,25 +18,25 @@ namespace ljl
         std::string m_default_answer;
         std::vector<std::string> m_argv;
         std::unordered_map<std::string, std::string> m_queries;
-        std::unordered_map<std::string, std::vector<std::string>> m_cmds;
+        std::unordered_map<std::string, std::unordered_map<std::string, std::string>> m_cmds;
         bool m_isCmd;
         bool m_checked = false;
     
     public:
-        enum class CmdType
+        enum class type
         {
             query,
             command
         };
 
     public:
-        cmd(int argc, char** argv, std::string_view jsonfp);
+        cmd(int argc, char** argv, const nlohmann::json& json);
         cmd(const cmd&) = delete;
         cmd& operator=(const cmd&) = delete;
 
         void respond();
 
-        bool is(CmdType type);
+        bool is(type type);
 
         bool operator[](const std::string& cmd);
 
