@@ -3,7 +3,7 @@
 CmdParser is a tool I made for parsing command line arguments in c++
 
 ### Example:
-```
+```c++
 // make a cmd object and pass in the json object
 ljl::cmd command{argc, argv, json};
 
