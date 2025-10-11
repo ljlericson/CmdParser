@@ -9,10 +9,13 @@
         "query":"hello"
     },
     "commands": {
-        "run": [
-            "<speed> (int)",
-            "<type> (string)"
-        ]
+        "run": {
+            "<speed>":"decimal",
+            "<type>":"string" 
+        },
+        "hello": {
+            
+        }
     },
     "default":"ERROR: Invalid command, please use \"--Help\" for a list of commands"
 }
