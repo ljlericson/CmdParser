@@ -10,11 +10,24 @@
     },
     "commands": {
         "run": {
-            "<speed>":"decimal",
-            "<type>":"string" 
+            "passtype":"explicit",
+            "args":{
+                "-speed":"decimal",
+                "-type":"string"
+            }
+        },
+        "run2": {
+            "passtype":"implicit",
+            "args":{
+                "<speed>":"decimal",
+                "<type>":"string"
+            }
         },
         "hello": {
-            
+            "passtype":"implicit",
+            "args": {
+
+            }
         }
     },
     "default":"ERROR: Invalid command, please use \"--Help\" for a list of commands"

@@ -1,6 +1,6 @@
 #include "../include/ljl/cmd.hpp"
 
-ljl::cmd::cmd(int argc, char** argv, const nlohmann::json& json)
+ljl::cmdparser::cmdparser(int argc, char** argv, const nlohmann::json& json)
 {
     for(int i = 0; i < argc; i++)
         m_argv.push_back(std::string(argv[i]));
@@ -19,13 +19,25 @@ ljl::cmd::cmd(int argc, char** argv, const nlohmann::json& json)
     {
         for (const auto& [cmd_name, cmd_data] : json["commands"].items()) 
         {
-            m_cmds.insert({
-                cmd_name,
-                {}
-            });
-            for(const auto& [arg, type] : cmd_data.items())
+            if( cmd_data.contains("passtype"))
             {
-                m_cmds.at(cmd_name).insert(std::pair{arg, type.get<std::string>()});
+                std::string pass_type = cmd_data["passtype"].get<std::string>();
+                m_cmd_passtype.insert(std::pair
+                    {cmd_name, 
+                    (pass_type == "explicit") ? passtype::explicit_ 
+                    : ((pass_type == "implicit") ? passtype::implicit 
+                            : passtype::explicit_)
+                });
+            }
+
+            m_cmds.insert({ cmd_name, {} });
+
+            if (cmd_data.contains("args"))
+            {
+                for (const auto& [arg, type] : cmd_data["args"].items())
+                {
+                    m_cmds.at(cmd_name).insert(std::pair{arg, type.get<std::string>()});
+                }
             }
         }
     }
@@ -35,7 +47,7 @@ ljl::cmd::cmd(int argc, char** argv, const nlohmann::json& json)
     }
 }
 
-bool ljl::cmd::is(cmd::type type)
+bool ljl::cmdparser::is(cmdparser::type type)
 {
     if(m_checked)
         return m_isCmd;
@@ -85,7 +97,7 @@ bool ljl::cmd::is(cmd::type type)
     return false;
 }
 
-void ljl::cmd::respond()
+void ljl::cmdparser::respond()
 {
     if(!m_isCmd && m_checked && m_argv.size() == 2)
     {
@@ -105,7 +117,7 @@ void ljl::cmd::respond()
 }
 
 template<typename _T_>
-_T_ ljl::cmd::get_value(const std::string& cmd, const std::string& arg)
+_T_ ljl::cmdparser::get_value(const std::string& cmd, const std::string& arg)
 {
     auto it = m_cmds.at(cmd).find(arg);
     if(it == m_cmds.at(cmd).end())
@@ -116,23 +128,54 @@ _T_ ljl::cmd::get_value(const std::string& cmd, const std::string& arg)
     }
     // else get type:
     const std::string& type = m_cmds.at(cmd).at(arg);
-
-    size_t element_num = std::distance(m_cmds.at(cmd).begin(), it) + 2;
-
     std::string* value;
-    
-    try
+
+    if(m_cmd_passtype.at(cmd) == passtype::explicit_)
     {
-        value = &m_argv.at(element_num);
+        auto it2 = std::find(m_argv.begin(), m_argv.end(), arg);
+        if(it2 == m_argv.end())
+        {
+            std::cout << "Invalid use of program\nArgs must be preceeded by flag i.e \"-speed 40\"";
+            exit(-1);
+            return _T_{};
+        }
+
+        size_t element_num = std::distance(m_argv.begin(), it2) + 1;
+
+        try
+        {
+            value = &m_argv.at(element_num);
+        }
+        catch(...)
+        {
+            std::cout << "|====| Missing argument(s) |====| (\"" << arg << "\")\nArgs for command " << cmd << ":\n";
+            for(const auto& [arg, type] : m_cmds.at(cmd))
+                std::cout << arg << " | Type: " << type << std::endl;
+            
+            exit(-1);
+            return _T_{}; // just for compiler warning sake
+        }
     }
-    catch(...)
+    else
     {
-        std::cout << "|====| Missing argument(s) |====|\nArgs for command " << cmd << ":\n";
-        for(const auto& [arg, type] : m_cmds.at(cmd))
-            std::cout << arg << " | Type: " << type << std::endl;
-        
-        exit(-1);
-        return _T_{}; // just for compiler warning sake
+        //   NO      NO    YES
+        // prog.exe [cmd] <arg>
+        //    +0      +1    +2
+        size_t element_num = std::distance(m_cmds.at(cmd).begin(), it) + 2;
+
+        try
+        {
+            value = &m_argv.at(element_num);
+        }
+        catch(...)
+        {
+            std::cout << "|====| Missing argument(s) |====| (\"" << arg << "\")\nArgs for command " << cmd << ":\n";
+            for(const auto& [arg, type] : m_cmds.at(cmd))
+                std::cout << arg << " | Type: " << type << std::endl;
+            
+            exit(-1);
+            return _T_{}; // just for compiler warning sake
+        }
     }
 
     // Convert based on template type
@@ -153,7 +196,7 @@ _T_ ljl::cmd::get_value(const std::string& cmd, const std::string& arg)
             }
             catch(const std::exception&)
             {
-                std::cout << "|====| Invalid argument(s) |====|\nArgs for command " << cmd << ":\n";
+                std::cout << "|====| Invalid argument(s) |====| (\"" << *value << ", " << arg << "\")\nArgs for command " << cmd << ":\n";
                 for(const auto& [arg, type] : m_cmds.at(cmd))
                     std::cout << arg << " | Type: " << type << std::endl;
 
@@ -177,7 +220,7 @@ _T_ ljl::cmd::get_value(const std::string& cmd, const std::string& arg)
             }
             catch(...)
             {
-                std::cout << "|====| Invalid argument(s) |====|\nArgs for command " << cmd << ":\n";
+                std::cout << "|====| Invalid argument(s) |====| (\"" << *value << ", " << arg << "\")\nArgs for command " << cmd << ":\n";
                 for(const auto& [arg, type] : m_cmds.at(cmd))
                     std::cout << arg << " | Type: " << type << std::endl;
 
@@ -196,23 +239,23 @@ _T_ ljl::cmd::get_value(const std::string& cmd, const std::string& arg)
     return _T_{};
 }
 
-bool ljl::cmd::operator[](const std::string& cmd)
+bool ljl::cmdparser::operator[](const std::string& cmd)
 {
     return m_argv[1] == cmd;
 }
 
 // string
-template std::string ljl::cmd::get_value<std::string>(const std::string&, const std::string&);
+template std::string ljl::cmdparser::get_value<std::string>(const std::string&, const std::string&);
 // integer types
-template int8_t ljl::cmd::get_value<int8_t>(const std::string&, const std::string&);
-template int16_t ljl::cmd::get_value<int16_t>(const std::string&, const std::string&);
-template int32_t ljl::cmd::get_value<int32_t>(const std::string&, const std::string&);
-template int64_t ljl::cmd::get_value<int64_t>(const std::string&, const std::string&);
+template int8_t ljl::cmdparser::get_value<int8_t>(const std::string&, const std::string&);
+template int16_t ljl::cmdparser::get_value<int16_t>(const std::string&, const std::string&);
+template int32_t ljl::cmdparser::get_value<int32_t>(const std::string&, const std::string&);
+template int64_t ljl::cmdparser::get_value<int64_t>(const std::string&, const std::string&);
 // unsinged integer types
-template uint8_t ljl::cmd::get_value<uint8_t>(const std::string&, const std::string&);
-template uint16_t ljl::cmd::get_value<uint16_t>(const std::string&, const std::string&);
-template uint32_t ljl::cmd::get_value<uint32_t>(const std::string&, const std::string&);
-template uint64_t ljl::cmd::get_value<uint64_t>(const std::string&, const std::string&);
+template uint8_t ljl::cmdparser::get_value<uint8_t>(const std::string&, const std::string&);
+template uint16_t ljl::cmdparser::get_value<uint16_t>(const std::string&, const std::string&);
+template uint32_t ljl::cmdparser::get_value<uint32_t>(const std::string&, const std::string&);
+template uint64_t ljl::cmdparser::get_value<uint64_t>(const std::string&, const std::string&);
 // decimal types
-template float ljl::cmd::get_value<float>(const std::string&, const std::string&);
-template double ljl::cmd::get_value<double>(const std::string&, const std::string&);
+template float ljl::cmdparser::get_value<float>(const std::string&, const std::string&);
+template double ljl::cmdparser::get_value<double>(const std::string&, const std::string&);
